@@ -86,7 +86,7 @@ instead of just a single one speaking into the void.
 
 Now Go and Chat!
 
-## Contibuting
+## Contributing
 
 If you'd like to contribute, fork the repository and open a pull request to
 the `main` branch.
