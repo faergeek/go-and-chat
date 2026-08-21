@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/gob"
 	"fmt"
+	"time"
 )
 
 type MsgKind int
@@ -42,6 +43,7 @@ func (m *MsgClientInfo) Kind() MsgKind {
 }
 
 type MsgChatMessage struct {
+	AckAt    time.Time
 	Message  string
 	Username string
 }

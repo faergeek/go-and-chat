@@ -151,6 +151,7 @@ func (s *server) handleClientMessage(c *srvClient, msg Msg) error {
 		}
 
 		msg := *m
+		msg.AckAt = time.Now()
 		msg.Username = c.username
 
 		s.mutex.RLock()

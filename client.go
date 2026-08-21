@@ -1,14 +1,17 @@
 package main
 
 import (
-	"bufio"
 	"encoding/gob"
 	"fmt"
 	"io"
 	"net"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
+
+	"github.com/faergeek/go-and-chat/internal/terminal"
 )
 
 type client struct {
@@ -19,98 +22,145 @@ type client struct {
 }
 
 func runClient(address string) error {
+	if !terminal.IsTerminal() {
+		fmt.Fprintln(os.Stderr, "Non-interactive use is not supported")
+		os.Exit(1)
+	}
+
+	term, err := terminal.AcquireTerminal()
+	if err != nil {
+		panic(err)
+	}
+	defer term.Release()
+
+	resizeCh := make(chan os.Signal, 1)
+	signal.Notify(resizeCh, syscall.SIGWINCH)
+	defer signal.Stop(resizeCh)
+
+	termInputCh := make(chan terminal.Input)
+	termInputErrCh := make(chan error)
+
+	go func() {
+		for {
+			input, err := term.ReadInput()
+			if err != nil {
+				termInputErrCh <- err
+				close(termInputCh)
+				return
+			}
+
+			termInputCh <- input
+		}
+	}()
+
 	fmt.Printf("Attempting to connect to a server on %s...", address)
 
 	conn, err := net.Dial("tcp", address)
 	if err != nil {
-		fmt.Println("FAILED")
+		fmt.Print("FAILED\r\n")
 		return err
 	}
+	fmt.Print("SUCCESS\r\n")
 	defer conn.Close()
 
-	fmt.Println("SUCCESS")
-
-	fmt.Printf("Connected to a server at %s\n", conn.RemoteAddr())
-
-	stdinCh := make(chan string)
-	stdinErrCh := make(chan error)
-	go readStdin(stdinCh, stdinErrCh)
+	fmt.Printf("Connected to a server at %s\r\n", conn.RemoteAddr())
 
 	client := NewClient(conn)
 	go client.startReader()
 	go client.startWriter()
 
-	usernamePrompt := "Your username: "
-	chatPrompt := "> "
-	fmt.Print(usernamePrompt)
-
 	var username string
+	textInput := newTextInput()
 	for {
+		if username == "" {
+			fmt.Print("\x1b7")
+			fmt.Print("Your name: ")
+			fmt.Print(string(textInput.Runes))
+			fmt.Print(strings.Repeat("\b", len(textInput.Runes)-textInput.Cursor))
+		} else {
+			fmt.Print("\x1b7")
+			fmt.Printf("%s > ", username)
+			fmt.Print(string(textInput.Runes))
+			fmt.Print(strings.Repeat("\b", len(textInput.Runes)-textInput.Cursor))
+		}
+
 		select {
-		case input := <-stdinCh:
-			if username == "" {
-				ack, err := client.sendMessage(&MsgClientInfo{Username: input})
-				if err != nil {
-					return err
+		case <-resizeCh:
+			fmt.Print("\x1b8\x1b[0J")
+		case termInput := <-termInputCh:
+			fmt.Print("\x1b8\x1b[0J")
+
+			done, err := textInput.handleInput(&termInput)
+			if err != nil {
+				if err == io.EOF {
+					return nil
 				}
 
-				if ack.Ok {
-					username = input
-					fmt.Print(chatPrompt)
-				} else {
-					fmt.Println(ack.Message)
-					fmt.Print(usernamePrompt)
-				}
-			} else {
-				ack, err := client.sendMessage(&MsgChatMessage{Message: input})
-				if err != nil {
-					return err
-				}
-
-				if !ack.Ok {
-					fmt.Println(ack.Message)
-				}
-
-				fmt.Print(chatPrompt)
+				return err
 			}
-		case err := <-stdinErrCh:
-			fmt.Printf("Could not read from stdin: %v", err)
-			return err
+
+			if done {
+				input := string(textInput.Runes)
+
+				if username == "" {
+					ack, err := client.sendMessage(&MsgClientInfo{Username: input})
+					if err != nil {
+						return err
+					}
+
+					if ack.Ok {
+						username = input
+						textInput.clear()
+					} else {
+						fmt.Printf("ERROR: %s\r\n", ack.Message)
+					}
+				} else {
+					ack, err := client.sendMessage(&MsgChatMessage{Message: string(textInput.Runes)})
+					if err != nil {
+						return err
+					}
+
+					if ack.Ok {
+						textInput.clear()
+					} else {
+						fmt.Printf("%s\r\n", ack.Message)
+					}
+				}
+			}
+		case err := <-termInputErrCh:
+			fmt.Print("\x1b8\x1b[0J")
+
+			return fmt.Errorf("Could not read input: %w", err)
 		case srvMsg := <-client.fromServer:
+			fmt.Print("\x1b8\x1b[0J")
+
 			chatMsg, ok := srvMsg.(*MsgChatMessage)
 			if !ok {
-				return fmt.Errorf("Unexpected to only receive chat messages, got %#v\n", srvMsg)
+				return fmt.Errorf("Unexpected to only receive chat messages, got %#v", srvMsg)
 			}
 
-			fmt.Println(strings.Repeat("\r", len(chatPrompt)))
-			fmt.Printf("%s: %s\n", chatMsg.Username, chatMsg.Message)
-			fmt.Print(chatPrompt)
+			fmt.Printf(
+				"\r%s (%v): %s\r\n",
+				chatMsg.Username,
+				chatMsg.AckAt.Format("15:04"),
+				chatMsg.Message,
+			)
 		case srvErr := <-client.errCh:
+			fmt.Print("\x1b8\x1b[0J")
+
 			if srvErr != io.EOF {
-				fmt.Printf("Got error from server: %v\n", srvErr)
+				fmt.Printf("Got error from server: %v\r\n", srvErr)
 			}
 
 			return srvErr
 		case <-time.After(2 * time.Second):
+			fmt.Print("\x1b8\x1b[0J")
+
 			_, err := client.sendMessage(&MsgPing{})
 			if err != nil {
 				return err
 			}
 		}
-	}
-}
-
-func readStdin(ch chan<- string, errch chan<- error) {
-	reader := bufio.NewReader(os.Stdin)
-
-	for {
-		input, err := reader.ReadString('\n')
-		if err != nil {
-			errch <- err
-			return
-		}
-
-		ch <- input[:len(input)-1]
 	}
 }
 
