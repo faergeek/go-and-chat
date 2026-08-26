@@ -1,8 +1,9 @@
 package terminal
 
 import (
-	"io"
+	"bufio"
 	"os"
+	"unicode"
 
 	"golang.org/x/sys/unix"
 )
@@ -36,26 +37,26 @@ func rawMode() (func() error, error) {
 }
 
 type Terminal struct {
-	reader              io.Reader
-	restoreTerminalMode func() error
+	reader  *bufio.Reader
+	restore func() error
 }
 
 func AcquireTerminal() (Terminal, error) {
-	restoreTerminalMode, err := rawMode()
+	restore, err := rawMode()
 	if err != nil {
 		return Terminal{}, err
 	}
 
 	t := Terminal{
-		reader:              os.Stdin,
-		restoreTerminalMode: restoreTerminalMode,
+		reader:  bufio.NewReader(os.Stdin),
+		restore: restore,
 	}
 
 	return t, nil
 }
 
 func (t *Terminal) Release() error {
-	return t.restoreTerminalMode()
+	return t.restore()
 }
 
 type InputKind int
@@ -64,7 +65,6 @@ const (
 	InputKindUnknown InputKind = iota
 	InputKindPrint
 	InputKindControl
-	InputKindCSI
 )
 
 type Input struct {
@@ -73,72 +73,45 @@ type Input struct {
 }
 
 func (t *Terminal) ReadInput() (Input, error) {
-	buf := make([]byte, 1)
-	_, err := t.reader.Read(buf)
+	r, _, err := t.reader.ReadRune()
 	if err != nil {
 		return Input{}, err
 	}
 
-	// Printable ASCII
-	if '\x20' <= buf[0] && buf[0] <= '\x7e' {
-		return Input{Kind: InputKindPrint, Str: string(buf)}, nil
-	}
-
-	// UTF-8 multibyte sequence
-	if buf[0] > '\x7f' {
-		// High bits encodes the sequence length:
-		// 110xxxxx - 2 bytes
-		// 1110xxxx - 3 bytes
-		// etc.
-		l := 1
-		for b := buf[0] << 1; b&(1<<7) != 0; b <<= 1 {
-			l++
-		}
-
-		data := []byte{buf[0]}
-		// Don't stop until the whole sequence is read
-		for len(data) < l {
-			_, err = t.reader.Read(buf)
-			if err != nil {
-				return Input{}, err
-			}
-
-			data = append(data, buf...)
-		}
-
-		return Input{Kind: InputKindPrint, Str: string(data)}, nil
+	if unicode.IsPrint(r) {
+		return Input{Kind: InputKindPrint, Str: string(r)}, nil
 	}
 
 	// treat anything other than Escape as a single control character
-	if buf[0] != '\x1b' {
-		return Input{Kind: InputKindControl, Str: string(buf)}, nil
+	if r != '\x1b' {
+		return Input{Kind: InputKindControl, Str: string(r)}, nil
 	}
 
-	data := []byte{buf[0]}
-	_, err = t.reader.Read(buf)
+	data := []rune{r}
+	r, _, err = t.reader.ReadRune()
 	if err != nil {
 		return Input{}, err
 	}
 
-	data = append(data, buf[0])
+	data = append(data, r)
 
 	// CSI
-	if buf[0] == '[' {
+	if r == '[' {
 		for {
-			_, err = t.reader.Read(buf)
+			r, _, err = t.reader.ReadRune()
 			if err != nil {
 				return Input{}, err
 			}
 
-			data = append(data, buf...)
+			data = append(data, r)
 
 			// Stop when final byte of CSI is read
-			if '\x40' <= buf[0] && buf[0] <= '\x7e' {
+			if '\x40' <= r && r <= '\x7e' {
 				break
 			}
 		}
 
-		return Input{Kind: InputKindCSI, Str: string(data[2:])}, nil
+		return Input{Kind: InputKindControl, Str: string(data)}, nil
 	}
 
 	// ignore anything else

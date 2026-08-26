@@ -3,6 +3,9 @@ package main
 import (
 	"fmt"
 	"os"
+
+	"github.com/faergeek/go-and-chat/internal/client"
+	"github.com/faergeek/go-and-chat/internal/server"
 )
 
 func main() {
@@ -22,13 +25,13 @@ func main() {
 
 	switch mode {
 	case "server":
-		err := runServer(address)
+		err := server.Start(address)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err.Error())
 			os.Exit(1)
 		}
 	case "client":
-		err := runClient(address)
+		err := client.Start(address)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err.Error())
 			os.Exit(1)

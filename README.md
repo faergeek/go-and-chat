@@ -51,7 +51,7 @@ provided as an argument:
 
 ```sh
 ./go-and-chat server localhost:4321 # different port on localhost
-./go-and-chat server :3241          # listen on a given port on all interfaces
+./go-and-chat server 0.0.0.0:3241   # listen on a given port on all interfaces
 ```
 
 ### Client
@@ -95,6 +95,7 @@ Make sure both `go build` and `go test ./...` succeed.
 
 You might also find the following resources useful:
 
+- [Building terminal apps from Scratch](https://sahaj.dev/blog/tui-from-scratch)
 - [Build Your Own Text Editor](https://viewsourcecode.org/snaptoken/kilo/)
   A tutorial walking you through building your own terminal text editor. It's in C.
   There's also Golang adaptation, from which you might find
