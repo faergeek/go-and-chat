@@ -74,13 +74,13 @@ func (t *textEntry) handleInput(input *terminal.Input) {
 	case terminal.InputKindControl:
 		switch input.Str {
 		case "\x01", "\x1b[H":
-			t.moveCursorTo(t.Cursor - 1)
+			t.moveCursorTo(0)
 		case "\x06", "\x1b[C":
 			t.moveCursorTo(t.Cursor + 1)
 		case "\x05", "\x1b[F":
-			t.moveCursorTo(0)
-		case "\x02", "\x1b[D":
 			t.moveCursorTo(len(t.Runes))
+		case "\x02", "\x1b[D":
+			t.moveCursorTo(t.Cursor - 1)
 		case "\x15":
 			t.deleteToTheLeft()
 		case "\x17":
