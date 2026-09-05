@@ -4,9 +4,9 @@ Chat server and client, implemented in Go.
 
 ## Motivation
 
-I was always wondering what goes into building terminal user interfaces, so I
-decided to learn more about that topic and built this chat app to apply what I
-have learned.
+I was always wondering what goes into building terminal user interfaces from
+scratch, without using any third party libraries. As I learned more about that
+topic, I decided to build this chat app to apply what I have learned so far.
 
 ## Quick Start
 
