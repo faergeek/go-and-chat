@@ -17,11 +17,11 @@ import (
 )
 
 func Start(address string) error {
-	if !terminal.IsTerminal() {
+	if !terminal.IsTerminal(os.Stdin) {
 		return errors.New("Non-interactive use is not supported")
 	}
 
-	term, err := terminal.AcquireTerminal()
+	term, err := terminal.AcquireTerminal(os.Stdin)
 	if err != nil {
 		return err
 	}

@@ -3,60 +3,91 @@ package terminal
 import (
 	"bufio"
 	"os"
+	"syscall"
 	"unicode"
-
-	"golang.org/x/sys/unix"
+	"unsafe"
 )
 
-func IsTerminal() bool {
-	_, err := unix.IoctlGetTermios(unix.Stdin, unix.TCGETS)
+type termios struct {
+	Iflag  uint32
+	Oflag  uint32
+	Cflag  uint32
+	Lflag  uint32
+	Cc     [20]byte
+	Ispeed uint32
+	Ospeed uint32
+}
+
+func getTermios(file *os.File) (*termios, error) {
+	var result termios
+
+	_, _, errno := syscall.Syscall(
+		syscall.SYS_IOCTL,
+		file.Fd(),
+		uintptr(syscall.TCGETS),
+		uintptr(unsafe.Pointer(&result)),
+	)
+	if errno != 0 {
+		return nil, errno
+	}
+
+	return &result, nil
+}
+
+func setTermios(file *os.File, t *termios) error {
+	_, _, errno := syscall.Syscall(
+		syscall.SYS_IOCTL,
+		file.Fd(),
+		uintptr(syscall.TCSETS),
+		uintptr(unsafe.Pointer(t)),
+	)
+	if errno != 0 {
+		return errno
+	}
+
+	return nil
+}
+
+func IsTerminal(file *os.File) bool {
+	_, err := getTermios(file)
 
 	return err == nil
 }
 
-func rawMode() (func() error, error) {
-	termios, err := unix.IoctlGetTermios(unix.Stdin, unix.TCGETS)
-	if err != nil {
-		return nil, err
-	}
-
-	termiosOrig := *termios
-	termios.Lflag = termios.Lflag &^ (unix.ECHO | unix.ICANON | unix.ISIG | unix.IEXTEN)
-	termios.Iflag = termios.Iflag &^ (unix.IXON | unix.ICRNL | unix.BRKINT | unix.INPCK | unix.ISTRIP)
-	termios.Oflag = termios.Oflag &^ (unix.OPOST)
-	termios.Cflag = termios.Cflag | unix.CS8
-
-	err = unix.IoctlSetTermios(unix.Stdin, unix.TCSETSF, termios)
-	if err != nil {
-		return nil, err
-	}
-
-	return func() error {
-		return unix.IoctlSetTermios(unix.Stdin, unix.TCSETSF, &termiosOrig)
-	}, nil
-}
-
 type Terminal struct {
-	reader  *bufio.Reader
-	restore func() error
+	file        *os.File
+	reader      *bufio.Reader
+	termiosPrev *termios
 }
 
-func AcquireTerminal() (Terminal, error) {
-	restore, err := rawMode()
+func AcquireTerminal(file *os.File) (*Terminal, error) {
+	termiosPrev, err := getTermios(file)
 	if err != nil {
-		return Terminal{}, err
+		return nil, err
+	}
+
+	termios := *termiosPrev
+	termios.Lflag &^= (syscall.ECHO | syscall.ICANON | syscall.ISIG | syscall.IEXTEN)
+	termios.Iflag &^= (syscall.IXON | syscall.ICRNL | syscall.BRKINT | syscall.INPCK | syscall.ISTRIP)
+	termios.Oflag &^= (syscall.OPOST)
+	termios.Cflag |= syscall.CS8
+
+	err = setTermios(file, &termios)
+	if err != nil {
+		return nil, err
 	}
 
 	t := Terminal{
-		reader:  bufio.NewReader(os.Stdin),
-		restore: restore,
+		file:        file,
+		reader:      bufio.NewReader(file),
+		termiosPrev: termiosPrev,
 	}
 
-	return t, nil
+	return &t, nil
 }
 
 func (t *Terminal) Release() error {
-	return t.restore()
+	return setTermios(t.file, t.termiosPrev)
 }
 
 type InputKind int
