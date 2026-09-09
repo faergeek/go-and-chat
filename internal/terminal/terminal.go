@@ -2,6 +2,7 @@ package terminal
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"syscall"
 	"unicode"
@@ -28,7 +29,7 @@ func getTermios(file *os.File) (*termios, error) {
 		uintptr(unsafe.Pointer(&result)),
 	)
 	if errno != 0 {
-		return nil, errno
+		return nil, fmt.Errorf("TCGETS: %v", errno)
 	}
 
 	return &result, nil
@@ -42,7 +43,7 @@ func setTermios(file *os.File, t *termios) error {
 		uintptr(unsafe.Pointer(t)),
 	)
 	if errno != 0 {
-		return errno
+		return fmt.Errorf("TCSETS: %v", errno)
 	}
 
 	return nil
