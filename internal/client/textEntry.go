@@ -59,36 +59,86 @@ func (t *textEntry) moveCursorTo(n int) {
 	t.Cursor = max(0, min(n, len(t.Runes)))
 }
 
+func (t *textEntry) moveWordBackward() {
+	i := t.Cursor - 1
+
+	for ; i > -1; i-- {
+		if !unicode.IsSpace(t.Runes[i]) {
+			break
+		}
+	}
+
+	for ; i > -1; i-- {
+		if unicode.IsSpace(t.Runes[i]) {
+			break
+		}
+	}
+
+	i++
+
+	t.Cursor = i
+}
+
+func (t *textEntry) moveWordForward() {
+	i := t.Cursor + 1
+
+	for ; i < len(t.Runes); i++ {
+		if !unicode.IsSpace(t.Runes[i]) {
+			break
+		}
+	}
+
+	for ; i < len(t.Runes); i++ {
+		if unicode.IsSpace(t.Runes[i]) {
+			break
+		}
+	}
+
+	i--
+
+	t.Cursor = i
+}
+
 func (t *textEntry) clear() {
 	t.Runes = []rune{}
 	t.Cursor = 0
 }
 
-func (t *textEntry) handleInput(input *terminal.Input) {
-	switch input.Kind {
-	case terminal.InputKindPrint:
-		for _, r := range input.Str {
-			t.Runes = slices.Insert(t.Runes, t.Cursor, r)
+func (t *textEntry) handleInput(input terminal.Input) {
+	switch input := input.(type) {
+	case terminal.InputKeyboard:
+		if input.Str != "" {
+			t.Runes = slices.Insert(t.Runes, t.Cursor, []rune(input.Str)...)
 			t.Cursor++
-		}
-	case terminal.InputKindControl:
-		switch input.Str {
-		case "\x01", "\x1b[H":
-			t.moveCursorTo(0)
-		case "\x06", "\x1b[C":
-			t.moveCursorTo(t.Cursor + 1)
-		case "\x05", "\x1b[F":
-			t.moveCursorTo(len(t.Runes))
-		case "\x02", "\x1b[D":
-			t.moveCursorTo(t.Cursor - 1)
-		case "\x15":
-			t.deleteToTheLeft()
-		case "\x17":
-			t.deleteWord()
-		case "\x7f":
-			t.backspace()
-		case "\x1b[3~":
-			t.deleteCharacter()
+		} else {
+			switch {
+			case input.Mod == terminal.Ctrl && input.Code == terminal.KeyArrowLeft ||
+				input.Mod == terminal.Alt && input.Code == 'b':
+				t.moveWordBackward()
+			case input.Mod == terminal.Ctrl && input.Code == terminal.KeyArrowRight ||
+				input.Mod == terminal.Alt && input.Code == 'f':
+				t.moveWordForward()
+			case input.Code == terminal.KeyArrowLeft ||
+				input.Mod == terminal.Ctrl && input.Code == 'b':
+				t.moveCursorTo(t.Cursor - 1)
+			case input.Code == terminal.KeyArrowRight ||
+				input.Mod == terminal.Ctrl && input.Code == 'f':
+				t.moveCursorTo(t.Cursor + 1)
+			case input.Code == terminal.KeyHome ||
+				input.Mod == terminal.Ctrl && input.Code == 'a':
+				t.moveCursorTo(0)
+			case input.Code == terminal.KeyEnd ||
+				input.Mod == terminal.Ctrl && input.Code == 'e':
+				t.moveCursorTo(len(t.Runes))
+			case input.Code == 'u' && input.Mod == terminal.Ctrl:
+				t.deleteToTheLeft()
+			case input.Code == 'w' && input.Mod == terminal.Ctrl:
+				t.deleteWord()
+			case input.Code == terminal.KeyBackspace:
+				t.backspace()
+			case input.Code == terminal.KeyDelete:
+				t.deleteCharacter()
+			}
 		}
 	}
 }

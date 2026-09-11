@@ -275,34 +275,30 @@ func (m model) render(logs io.Writer, ui io.Writer) {
 func (m model) update(logs io.Writer, event event) (model, task) {
 	switch event := event.(type) {
 	case eventInput:
-		if event.input.Kind == terminal.InputKindControl &&
-			event.input.Str == "\x03" {
-			return m, quit(nil)
-		}
+		switch input := event.input.(type) {
+		case terminal.InputKeyboard:
+			if input.Code == 'c' && input.Mod == terminal.Ctrl {
+				return m, quit(nil)
+			}
 
-		if m.waitingResponse {
-			return m, nil
-		}
+			if m.waitingResponse {
+				return m, nil
+			}
 
-		switch event.input.Kind {
-		case terminal.InputKindControl:
-			switch event.input.Str {
-			case "\r", "\n":
+			if input.Code == terminal.KeyEnter {
 				input := string(m.textEntry.Runes)
 				m.textEntry.clear()
+				m.waitingResponse = true
+
 				if m.username == "" {
-					m.waitingResponse = true
 					return m, sendUserInfo(m.requests, proto.ClientMsgUserInfo{Name: input})
-				} else {
-					m.waitingResponse = true
-					return m, sendChat(m.requests, proto.ClientMsgChat{Text: input})
 				}
-			default:
-				m.textEntry.handleInput(&event.input)
+
+				return m, sendChat(m.requests, proto.ClientMsgChat{Text: input})
 			}
-		default:
-			m.textEntry.handleInput(&event.input)
 		}
+
+		m.textEntry.handleInput(event.input)
 	case eventBroadcast:
 		fmt.Fprintf(
 			logs,

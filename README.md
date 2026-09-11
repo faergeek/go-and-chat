@@ -91,8 +91,6 @@ Now Go and Chat!
 If you'd like to contribute, fork the repository and open a pull request to
 the `main` branch.
 
-Make sure both `go build` and `go test ./...` succeed.
-
 You might also find the following resources useful:
 
 - [Building terminal apps from Scratch](https://sahaj.dev/blog/tui-from-scratch)
